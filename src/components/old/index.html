@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Table Merge Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Table Merge Manager</h1>
+  <div class="controls">
+    <input type="file" id="fileInput1" accept=".json,.csv" title="첫번째 테이블 파일 선택" placeholder="첫번째 테이블 파일">
+    <button id="loadBtn1">첫번째 테이블 불러오기</button>
+    <input type="file" id="fileInput2" accept=".json,.csv" title="두번째 테이블 파일 선택" placeholder="두번째 테이블 파일">
+    <button id="loadBtn2">두번째 테이블 불러오기</button>
+    <label>병합 기준 컬럼: <input type="text" id="mergeKey" placeholder="예: id" title="병합 기준 컬럼"></label>
+    <button id="mergeBtn">병합</button>
+    <button id="saveJsonBtn">병합결과 JSON 저장</button>
+    <button id="saveCsvBtn">병합결과 CSV 저장</button>
+    <button id="showPasteAreaBtn">붙여넣기 추가</button>
+  </div>
+  <div id="pasteAreaContainer" style="display:none; text-align:center; margin-bottom:20px;">
+    <textarea id="pasteArea" rows="6" cols="80" placeholder="엑셀에서 복사한 표를 여기에 붙여넣으세요"></textarea><br>
+    <button id="addPastedTableBtn">붙여넣은 데이터 추가</button>
+    <button id="closePasteAreaBtn">닫기</button>
+  </div>
+  <div class="tables-row">
+    <div class="table-block">
+      <h2>첫번째 테이블</h2>
+      <button id="pasteToTable1Btn">붙여넣기</button>
+      <div id="pasteToTable1Area" style="display:none; margin-bottom:8px;">
+        <textarea id="pasteToTable1Textarea" rows="5" cols="50" placeholder="엑셀 등에서 복사한 표를 붙여넣으세요"></textarea><br>
+        <button id="applyPasteToTable1Btn">적용</button>
+        <button id="closePasteToTable1Btn">닫기</button>
+      </div>
+      <div id="tableContainer1"></div>
+    </div>
+    <div class="table-block">
+      <h2>두번째 테이블</h2>
+      <button id="pasteToTable2Btn">붙여넣기</button>
+      <div id="pasteToTable2Area" style="display:none; margin-bottom:8px;">
+        <textarea id="pasteToTable2Textarea" rows="5" cols="50" placeholder="엑셀 등에서 복사한 표를 붙여넣으세요"></textarea><br>
+        <button id="applyPasteToTable2Btn">적용</button>
+        <button id="closePasteToTable2Btn">닫기</button>
+      </div>
+      <div id="tableContainer2"></div>
+    </div>
+  </div>
+  <div class="result-block">
+    <h2>병합 결과 테이블</h2>
+    <div id="mergedTableContainer"></div>
+  </div>
+  <script src="tableManager.js"></script>
+</body>
+</html> 
