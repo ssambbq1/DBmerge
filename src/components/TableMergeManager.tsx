@@ -1,31 +1,39 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import * as XLSX from 'xlsx';
 
 interface TableRow {
   [key: string]: string | number | undefined;
 }
 
-function parseCSV(text: string): TableRow[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim());
-  const lowerHeaders = headers.map(h => h.toLowerCase());
-  return lines.slice(1).map(line => {
-    const values = line.split(',');
-    const obj: TableRow = {};
-    lowerHeaders.forEach((h, i) => (obj[h] = values[i]));
-    return obj;
-  });
-}
-
-function toCSV(data: TableRow[], columns: string[]): string {
-  const header = columns.join(',');
-  const rows = data.map(row => columns.map(col => row[col.toLowerCase()] ?? '').join(','));
-  return [header, ...rows].join('\n');
+interface TableMergeManagerProps {
+  table1: TableRow[];
+  setTable1: React.Dispatch<React.SetStateAction<TableRow[]>>;
+  table2: TableRow[];
+  setTable2: React.Dispatch<React.SetStateAction<TableRow[]>>;
+  mergedTable: TableRow[];
+  setMergedTable: React.Dispatch<React.SetStateAction<TableRow[]>>;
+  mergeKey: string;
+  setMergeKey: React.Dispatch<React.SetStateAction<string>>;
+  showPaste1: boolean;
+  setShowPaste1: React.Dispatch<React.SetStateAction<boolean>>;
+  showPaste2: boolean;
+  setShowPaste2: React.Dispatch<React.SetStateAction<boolean>>;
+  pasteText1: string;
+  setPasteText1: React.Dispatch<React.SetStateAction<string>>;
+  pasteText2: string;
+  setPasteText2: React.Dispatch<React.SetStateAction<string>>;
+  fileInput1: React.RefObject<HTMLInputElement>;
+  fileInput2: React.RefObject<HTMLInputElement>;
+  handleFile1: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFile2: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handlePaste1: () => void;
+  handlePaste2: () => void;
+  handleMerge: () => void;
+  handleExport: (type: 'json' | 'csv') => void;
+  handleExportExcel: () => void;
 }
 
 function getAllColumns(...tables: TableRow[][]): string[] {
@@ -34,46 +42,33 @@ function getAllColumns(...tables: TableRow[][]): string[] {
   return Array.from(set);
 }
 
-function parsePastedTable(text: string): TableRow[] {
-  // Try JSON first
-  try {
-    if (text.trim().startsWith('[')) {
-      // JSON의 경우, 컬럼명도 소문자로 변환
-      const arr = JSON.parse(text) as TableRow[];
-      return arr.map((row) => {
-        const newRow: TableRow = {};
-        Object.keys(row).forEach(k => {
-          newRow[k.toLowerCase()] = row[k];
-        });
-        return newRow;
-      });
-    }
-  } catch {}
-  // Otherwise, treat as tabular (Excel/CSV)
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(/\t|,/).map(h => h.trim());
-  const lowerHeaders = headers.map(h => h.toLowerCase());
-  return lines.slice(1).map(line => {
-    const values = line.split(/\t|,/);
-    const obj: TableRow = {};
-    lowerHeaders.forEach((h, i) => (obj[h] = values[i]));
-    return obj;
-  });
-}
-
-const TableMergeManager: React.FC = () => {
-  const [table1, setTable1] = useState<TableRow[]>([]);
-  const [table2, setTable2] = useState<TableRow[]>([]);
-  const [mergedTable, setMergedTable] = useState<TableRow[]>([]);
-  const [mergeKey, setMergeKey] = useState('');
-  const [showPaste1, setShowPaste1] = useState(false);
-  const [showPaste2, setShowPaste2] = useState(false);
-  const [pasteText1, setPasteText1] = useState('');
-  const [pasteText2, setPasteText2] = useState('');
-  const fileInput1 = useRef<HTMLInputElement>(null);
-  const fileInput2 = useRef<HTMLInputElement>(null);
-
+const TableMergeManager: React.FC<TableMergeManagerProps> = ({
+  table1,
+  setTable1,
+  table2,
+  setTable2,
+  mergedTable,
+  setMergedTable,
+  mergeKey,
+  setMergeKey,
+  showPaste1,
+  setShowPaste1,
+  showPaste2,
+  setShowPaste2,
+  pasteText1,
+  setPasteText1,
+  pasteText2,
+  setPasteText2,
+  fileInput1,
+  fileInput2,
+  handleFile1,
+  handleFile2,
+  handlePaste1,
+  handlePaste2,
+  handleMerge,
+  handleExport,
+  handleExportExcel,
+}) => {
   // 인라인 에디팅 상태: {tableType, rowIdx, col} (tableType: 'table1' | 'table2' | 'merged')
   const [editingCell, setEditingCell] = useState<{ table: string; rowIdx: number; col: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>('');
@@ -83,22 +78,36 @@ const TableMergeManager: React.FC = () => {
 
   // 셀 값 변경 핸들러
   const handleCellChange = (table: string, rowIdx: number, col: string, value: string) => {
+    // Convert value to appropriate type (number or string)
+    const convertValue = (val: string): string | number => {
+      const trimmed = val.trim();
+      if (trimmed === '') return '';
+      
+      const num = Number(trimmed);
+      if (!isNaN(num) && trimmed !== '') {
+        return num;
+      }
+      return trimmed;
+    };
+    
+    const convertedValue = convertValue(value);
+    
     if (table === 'table1') {
       setTable1(prev => {
         const next = [...prev];
-        next[rowIdx] = { ...next[rowIdx], [col]: value };
+        next[rowIdx] = { ...next[rowIdx], [col]: convertedValue };
         return next;
       });
     } else if (table === 'table2') {
       setTable2(prev => {
         const next = [...prev];
-        next[rowIdx] = { ...next[rowIdx], [col]: value };
+        next[rowIdx] = { ...next[rowIdx], [col]: convertedValue };
         return next;
       });
     } else if (table === 'merged') {
       setMergedTable(prev => {
         const next = [...prev];
-        next[rowIdx] = { ...next[rowIdx], [col]: value };
+        next[rowIdx] = { ...next[rowIdx], [col]: convertedValue };
         return next;
       });
     }
@@ -154,126 +163,7 @@ const TableMergeManager: React.FC = () => {
         setMergeKey(firstCol);
       }
     }
-  }, [table2]);
-
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>, setTable: (t: TableRow[]) => void) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      let data: TableRow[] = [];
-      try {
-        if (file.name.endsWith('.json')) {
-          // JSON의 경우, 컬럼명도 소문자로 변환
-          const arr = JSON.parse(ev.target?.result as string) as TableRow[];
-          data = arr.map((row) => {
-            const newRow: TableRow = {};
-            Object.keys(row).forEach(k => {
-              newRow[k.toLowerCase()] = row[k];
-            });
-            return newRow;
-          });
-        } else if (file.name.endsWith('.csv')) {
-          data = parseCSV(ev.target?.result as string);
-        } else if (file.name.endsWith('.xlsx')) {
-          const arr = new Uint8Array(ev.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(arr, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[sheetName];
-          // XLSX의 경우, 컬럼명도 소문자로 변환
-          const raw = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as TableRow[];
-          data = raw.map((row) => {
-            const newRow: TableRow = {};
-            Object.keys(row).forEach(k => {
-              newRow[k.toLowerCase()] = row[k];
-            });
-            return newRow;
-          });
-        } else {
-          alert('지원하지 않는 파일 형식입니다.');
-        }
-        setTable(data);
-      } catch (e) {
-        alert('파일 파싱 오류: ' + (e as Error).message);
-      }
-    };
-    if (file.name.endsWith('.xlsx')) {
-      reader.readAsArrayBuffer(file);
-    } else {
-      reader.readAsText(file);
-    }
-  };
-
-  const handlePaste = (text: string, setTable: (t: TableRow[]) => void) => {
-    try {
-      const data = parsePastedTable(text);
-      setTable(data);
-    } catch (e) {
-      alert('붙여넣기 데이터 파싱 오류: ' + (e as Error).message);
-    }
-  };
-
-  const handleMerge = () => {
-    if (!mergeKey) return alert('병합 기준 컬럼을 입력하세요.');
-    if (table1.length === 0 || table2.length === 0) return alert('두 테이블 모두 데이터가 필요합니다.');
-    const merged: TableRow[] = [];
-    const key = mergeKey.toLowerCase();
-    const table2Map = new Map(table2.map(row => [row[key], row]));
-    const usedKeys = new Set();
-    // 1. table1 기준 병합
-    table1.forEach(row1 => {
-      const row2 = table2Map.get(row1[key]);
-      if (row2) {
-        const mergedRow: TableRow = { ...row1 };
-        Object.keys(row2).forEach(col => {
-          // row2의 값이 null/undefined/''가 아니면 덮어씀
-          if (row2[col] !== undefined && row2[col] !== null && row2[col] !== '') {
-            mergedRow[col] = row2[col];
-          }
-        });
-        merged.push(mergedRow);
-        usedKeys.add(row1[key]);
-      } else {
-        merged.push({ ...row1 });
-      }
-    });
-    // 2. table2에만 있는 row 추가
-    table2.forEach(row2 => {
-      if (!usedKeys.has(row2[key])) {
-        merged.push({ ...row2 });
-      }
-    });
-    setMergedTable(merged);
-  };
-
-  const handleExport = (type: 'json' | 'csv') => {
-    if (mergedTable.length === 0) return alert('병합 결과가 없습니다.');
-    const columns = getAllColumns(mergedTable);
-    let content = '';
-    let filename = '';
-    if (type === 'json') {
-      content = JSON.stringify(mergedTable, null, 2);
-      filename = 'merged.json';
-    } else {
-      content = toCSV(mergedTable, columns);
-      filename = 'merged.csv';
-    }
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportExcel = () => {
-    if (mergedTable.length === 0) return alert('병합 결과가 없습니다.');
-    const ws = XLSX.utils.json_to_sheet(mergedTable);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Merged');
-    XLSX.writeFile(wb, 'merged.xlsx');
-  };
+  }, [table2, mergeKey, setMergeKey]);
 
   const renderTable = (
     data: TableRow[],
@@ -361,7 +251,7 @@ const TableMergeManager: React.FC = () => {
                         row2[col] !== undefined &&
                         row2[col] !== null &&
                         row2[col] !== '' &&
-                        row1[col] !== row2[col]
+                        String(row1[col]).trim() !== String(row2[col]).trim()
                       ) {
                         // 기존 값이 바뀐 경우 (단, Additional Table의 값이 비어있지 않을 때만)
                         cellClass += " bg-yellow-200";
@@ -406,7 +296,7 @@ const TableMergeManager: React.FC = () => {
                           }}
                         />
                       ) : (
-                        cellValue
+                        cellValue !== undefined && cellValue !== null ? String(cellValue) : ''
                       )}
                     </td>
                   );
@@ -430,15 +320,15 @@ const TableMergeManager: React.FC = () => {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-row gap-2">
-              <Input id="fileInput1" type="file" accept=".json,.csv,.xlsx" ref={fileInput1} onChange={e => handleFile(e, setTable1)} className="w-3/5 bg-gray-400" />
+              <Input id="fileInput1" type="file" accept=".json,.csv,.xlsx" ref={fileInput1} onChange={handleFile1} className="w-3/5 bg-gray-400" />
               <Button variant="default" type="button" onClick={() => setShowPaste1(v => !v)} className="w-25">Table Paste</Button>
             </div>
             {showPaste1 && (
               <div className="flex flex-col gap-2 bg-muted rounded-lg p-3">
  
-                <textarea id="pasteText1" className="resize-none rounded-md border p-2 text-sm bg-background" rows={4} value={pasteText1} onChange={e => setPasteText1(e.target.value)} placeholder="엑셀 등에서 복사한 표를 Ctrl+V로 붙여넣으세요" />
+                <textarea id="pasteText1" className="resize-none rounded-md border p-2 text-sm bg-background" rows={4} value={pasteText1} onChange={e => setPasteText1(e.target.value)} placeholder="엑셀 등에서 복사한 표를 Ctrl+V로 붙여넣으세요. 소수점은 .으로 입력하세요 (예: 3.14). 퍼센트는 %로 입력하세요 (예: 5%)" />
                 <div className="flex gap-2 justify-end">
-                  <Button variant="default" type="button" onClick={() => { handlePaste(pasteText1, setTable1); setShowPaste1(false); }}>적용</Button>
+                  <Button variant="default" type="button" onClick={() => { handlePaste1(); setShowPaste1(false); }}>적용</Button>
                   <Button variant="outline" type="button" onClick={() => setShowPaste1(false)}>닫기</Button>
                 </div>
               </div>
@@ -453,15 +343,15 @@ const TableMergeManager: React.FC = () => {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-row gap-2">
-              <Input id="fileInput2" type="file" accept=".json,.csv,.xlsx" ref={fileInput2} onChange={e => handleFile(e, setTable2)} className="w-3/5 bg-gray-400" />
+              <Input id="fileInput2" type="file" accept=".json,.csv,.xlsx" ref={fileInput2} onChange={handleFile2} className="w-3/5 bg-gray-400" />
               <Button variant="default" type="button" onClick={() => setShowPaste2(v => !v)} className="w-25">Table Paste</Button>
             </div>
             {showPaste2 && (
               <div className="flex flex-col gap-2 bg-muted rounded-lg p-3">
             
-                <textarea id="pasteText2" className="resize-none rounded-md border p-2 text-sm bg-background" rows={4} value={pasteText2} onChange={e => setPasteText2(e.target.value)} placeholder="엑셀 등에서 복사한 표를 Ctrl+V로 붙여넣으세요" />
+                <textarea id="pasteText2" className="resize-none rounded-md border p-2 text-sm bg-background" rows={4} value={pasteText2} onChange={e => setPasteText2(e.target.value)} placeholder="엑셀 등에서 복사한 표를 Ctrl+V로 붙여넣으세요. 소수점은 .으로 입력하세요 (예: 3.14). 퍼센트는 %로 입력하세요 (예: 5%)" />
                 <div className="flex gap-2 justify-end">
-                  <Button variant="default" type="button" onClick={() => { handlePaste(pasteText2, setTable2); setShowPaste2(false); }}>적용</Button>
+                  <Button variant="default" type="button" onClick={() => { handlePaste2(); setShowPaste2(false); }}>적용</Button>
                   <Button variant="outline" type="button" onClick={() => setShowPaste2(false)}>닫기</Button>
                 </div>
               </div>
